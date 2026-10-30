@@ -111,6 +111,7 @@ jobs:
           THREADS="${{ inputs.threads || '50' }}"
           RAMPUP="${{ inputs.rampup || '10' }}"
           LOOPS="${{ inputs.loops || '20' }}"
+          rm -rf jmeter/results.jtl jmeter/report
           mkdir -p jmeter/report
 
           jmeter -n \
