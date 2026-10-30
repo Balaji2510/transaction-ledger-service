@@ -22,7 +22,7 @@ export class DatabaseConnection {
       console.log('📦 MongoDB connection established successfully');
     });
 
-    mongoose.connection.on('error', (err) => {
+    mongoose.connection.on('error', (err: unknown) => {
       this.isConnected = false;
       console.error('❌ MongoDB connection error:', err);
     });
@@ -42,7 +42,7 @@ export class DatabaseConnection {
       await mongoose.connect(uri, {
         autoIndex: true,
         serverSelectionTimeoutMS: 5000,
-      });
+      } as mongoose.ConnectOptions);
       this.isConnected = true;
     } catch (error) {
       this.isConnected = false;
