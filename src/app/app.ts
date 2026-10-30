@@ -27,7 +27,19 @@ export interface AppDependencies {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const openApiPath = path.resolve(__dirname, '../docs/openapi.json');
+const resolveOpenApiPath = (): string | null => {
+  const candidates = [
+    path.resolve(__dirname, '../docs/openapi.json'),
+    path.resolve(process.cwd(), 'dist/docs/openapi.json'),
+    path.resolve(process.cwd(), 'src/docs/openapi.json'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+};
 
 export const createApp = (dependencies: AppDependencies = {}): Express => {
   const app = express();
@@ -49,9 +61,10 @@ export const createApp = (dependencies: AppDependencies = {}): Express => {
 
   // Interactive Swagger UI & OpenAPI Specification
   app.get('/api-docs.json', (_req, res) => {
-    if (fs.existsSync(openApiPath)) {
+    const specPath = resolveOpenApiPath();
+    if (specPath) {
       res.setHeader('Content-Type', 'application/json');
-      res.sendFile(openApiPath);
+      res.sendFile(specPath);
     } else {
       res.status(404).json({ error: 'OpenAPI specification not found' });
     }

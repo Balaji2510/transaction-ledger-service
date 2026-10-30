@@ -6,7 +6,7 @@
   "main": "dist/server/index.js",
   "scripts": {
     "dev": "tsx watch src/server/index.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-assets.js",
     "start": "node dist/server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
