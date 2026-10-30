@@ -95,12 +95,45 @@ npm start
 ### Run Tests
 
 ```bash
-# Unit & Integration Tests (79 automated tests)
+# Unit & Integration Tests (83 automated tests)
 npm test
 
 # Concurrent Load & Performance Benchmark
 npm run test:load
 ```
+
+### Docker & Docker Compose Deployment
+
+Spin up the entire stack (Node.js API + MongoDB with health check) in one command:
+
+```bash
+docker compose up -d --build
+```
+
+The API will be live at `http://localhost:3000` and automatically connects to the containerized MongoDB instance.
+
+### Free Cloud Deployment on Koyeb
+
+This repository is ready for 1-click deployment on [Koyeb](https://www.koyeb.com) (Free Eco Nano tier, no cold sleep timeouts):
+
+1. **Sign up at [koyeb.com](https://www.koyeb.com)** (free, no credit card required).
+2. Click **Create Service** -> **GitHub**.
+3. Select this repository: `Balaji2510/transaction-ledger-service`.
+4. Choose **Dockerfile** as the build method.
+5. Select **Nano** instance type (free).
+6. Under **Environment variables**, set:
+   - `PORT`: `3000`
+   - `NODE_ENV`: `production`
+   - `MONGODB_URI`: `<your-mongodb-atlas-url>` (or set `USE_IN_MEMORY=true` if testing without external DB)
+7. Under **Exposed Ports**, configure port `3000` with HTTP protocol.
+8. Click **Deploy**. Your live service URL will be ready in ~1 minute.
+
+### Interactive API Documentation (Swagger UI)
+
+Explore and test endpoints interactively in your browser:
+
+- **Swagger UI**: [http://localhost:3000/docs](http://localhost:3000/docs)
+- **Raw OpenAPI 3.0 Spec**: [http://localhost:3000/api-docs.json](http://localhost:3000/api-docs.json)
 
 ---
 
@@ -498,6 +531,41 @@ Transfers money atomically between two accounts. Debits the source account and c
   "uptime": 12.45
 }
 ```
+
+---
+
+## 📝 Architectural & Business Assumptions
+
+1. **Strict Zero Initial Balance**:
+   - Accounts are always initialized with a balance of `0.00`. Clients cannot override or supply an initial balance during account creation (`400 Bad Request`).
+   - Funding must occur via an explicit `credit` transaction to maintain an auditable, verifiable ledger history.
+
+2. **System-Generated Timestamps & Immutability**:
+   - Account and transaction timestamps (`created_at`) are automatically generated in ISO 8601 UTC format by the server and cannot be supplied by clients.
+   - Financial ledger entries are strictly **immutable and append-only**. Transactions cannot be updated (`PUT`/`PATCH`) or deleted (`DELETE`) (returns `405 Method Not Allowed`). Rectifications must occur via offsetting compensating credit or debit entries.
+
+3. **Idempotency & Duplicate Reference ID Detection**:
+   - Every transaction requires a non-empty `referenceId` representing a client idempotency key.
+   - A unique compound database index on `{ accountId: 1, referenceId: 1 }` guarantees that duplicate reference IDs for the same account are rejected (`409 Conflict`) without modifying account balances.
+
+4. **Balance Consistency & Overdraft Protection**:
+   - The current balance of any account strictly equals the sum of valid credits minus debits:
+     $$\text{Balance} = \sum \text{Credits} - \sum \text{Debits}$$
+   - Overdrafts are prohibited. Any debit exceeding current balance is rejected with `400 Bad Request` (`INSUFFICIENT_BALANCE`), leaving the balance unchanged.
+   - Database-level conditional operations (`$inc` guarded by `{ balance: { $gte: amount } }`) ensure atomic, race-condition-free execution even under high concurrency.
+
+5. **Atomic Money Transfers**:
+   - Transfers between two accounts are executed atomically: debiting the source account, crediting the destination account, and recording dual ledger records.
+   - If any step fails, the entire transaction is rolled back via compensating operations. Partial transfers are never permitted.
+   - Self-transfers (`fromAccountId === toAccountId`) are rejected (`400 Bad Request`).
+
+6. **Standardized Pagination & Sorting**:
+   - All collection GET endpoints (`/accounts`, `/accounts/:id/transactions`) default to `page=1` and `pageSize=10` (max 100).
+   - Responses provide structured pagination metadata: `currentPage`, `pageSize`, `totalRecords`, and `totalPages`.
+   - All lists are sorted in reverse chronological order (`created_at: -1`, newest first) backed by compound database indexes.
+
+7. **Persistence & Fallback**:
+   - Primary storage is MongoDB via Mongoose. If MongoDB is unavailable or `USE_IN_MEMORY=true` is set, the service seamlessly falls back to an in-memory repository to enable offline development and zero-dependency unit testing.
 
 ---
 

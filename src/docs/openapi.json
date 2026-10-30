@@ -1,0 +1,184 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Transaction Ledger Service API",
+    "version": "1.0.0",
+    "description": "Production-grade, scalable, and audit-compliant REST API for high-throughput transaction ledger and balance management, built with Clean Architecture, ACID principles, and strict immutability."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local Development Server"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Returns operational status and server uptime.",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "uptime": { "type": "number", "example": 142.5 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts": {
+      "post": {
+        "summary": "Create Account",
+        "description": "Creates a new ledger account. Enforces strict 0 initial balance.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "example": "Jane Doe" },
+                  "id": { "type": "string", "example": "acc_user_101", "description": "Optional unique account identifier" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Account created successfully" },
+          "400": { "description": "Validation error (missing name or balance supplied by client)" },
+          "409": { "description": "Conflict (account ID already exists)" }
+        }
+      },
+      "get": {
+        "summary": "List Accounts",
+        "description": "Lists all ledger accounts with pagination, sorted newest first based on creation date.",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 10 } }
+        ],
+        "responses": {
+          "200": { "description": "List of paginated accounts" }
+        }
+      }
+    },
+    "/api/v1/accounts/{id}": {
+      "get": {
+        "summary": "Get Account by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Account found" },
+          "404": { "description": "Account not found" }
+        }
+      }
+    },
+    "/api/v1/accounts/{id}/balance": {
+      "get": {
+        "summary": "Get Account Balance",
+        "description": "High-throughput endpoint fetching current balance with lean DB projections.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Accurate current balance" },
+          "404": { "description": "Account not found" }
+        }
+      }
+    },
+    "/api/v1/accounts/{id}/transactions": {
+      "post": {
+        "summary": "Record Transaction",
+        "description": "Atomically records a credit or debit transaction and updates account balance.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["type", "amount", "referenceId"],
+                "properties": {
+                  "type": { "type": "string", "enum": ["credit", "debit"], "example": "credit" },
+                  "amount": { "type": "number", "minimum": 0.01, "example": 100 },
+                  "referenceId": { "type": "string", "example": "ref_deposit_001", "description": "Client idempotency key" },
+                  "description": { "type": "string", "example": "Payroll deposit" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Transaction recorded and balance updated" },
+          "400": { "description": "Validation error or insufficient funds" },
+          "409": { "description": "Duplicate reference ID detected for this account" }
+        }
+      },
+      "get": {
+        "summary": "Get Transaction History",
+        "description": "Fetches transaction history sorted latest first based on created_at, with optional type filtering and pagination.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["credit", "debit"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 10 } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated transaction history" },
+          "404": { "description": "Account not found" }
+        }
+      },
+      "put": {
+        "summary": "Reject Modification (Immutability)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "405": { "description": "Transactions are immutable" } }
+      },
+      "delete": {
+        "summary": "Reject Deletion (Immutability)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "405": { "description": "Transactions are immutable" } }
+      }
+    },
+    "/api/v1/accounts/transfer": {
+      "post": {
+        "summary": "Money Transfer (P2P / Inter-Account)",
+        "description": "Atomically debits source account, credits destination account, and logs dual immutable ledger entries with rollback protection.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["fromAccountId", "toAccountId", "amount", "referenceId"],
+                "properties": {
+                  "fromAccountId": { "type": "string", "example": "acc_user_101" },
+                  "toAccountId": { "type": "string", "example": "acc_user_102" },
+                  "amount": { "type": "number", "minimum": 0.01, "example": 40 },
+                  "referenceId": { "type": "string", "example": "transfer_ref_999" },
+                  "description": { "type": "string", "example": "Payment for consulting services" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Transfer executed atomically" },
+          "400": { "description": "Validation error, insufficient balance, or self-transfer" },
+          "404": { "description": "Source or destination account not found" }
+        }
+      }
+    }
+  }
+}

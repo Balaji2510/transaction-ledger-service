@@ -2,9 +2,13 @@ import express, { Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { config } from '../config/env.js';
 import { errorHandler } from '../middleware/error-handler.middleware.js';
 import { notFoundHandler } from '../middleware/not-found.middleware.js';
+import { correlationIdMiddleware } from '../middleware/correlation-id.middleware.js';
 import { IAccountRepository } from '../modules/accounts/repositories/account.repository.interface.js';
 import { InMemoryAccountRepository } from '../modules/accounts/repositories/in-memory-account.repository.js';
 import { AccountService } from '../modules/accounts/services/account.service.js';
@@ -21,13 +25,18 @@ export interface AppDependencies {
   transactionRepository?: ITransactionRepository;
 }
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const openApiPath = path.resolve(__dirname, '../docs/openapi.json');
+
 export const createApp = (dependencies: AppDependencies = {}): Express => {
   const app = express();
 
   // Cross-cutting Middlewares
-  app.use(helmet());
+  app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors({ origin: config.corsOrigin }));
   app.use(express.json());
+  app.use(correlationIdMiddleware);
 
   if (config.nodeEnv !== 'test') {
     app.use(morgan('combined'));
@@ -36,6 +45,47 @@ export const createApp = (dependencies: AppDependencies = {}): Express => {
   // Health check endpoint
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok', uptime: process.uptime() });
+  });
+
+  // Interactive Swagger UI & OpenAPI Specification
+  app.get('/api-docs.json', (_req, res) => {
+    if (fs.existsSync(openApiPath)) {
+      res.setHeader('Content-Type', 'application/json');
+      res.sendFile(openApiPath);
+    } else {
+      res.status(404).json({ error: 'OpenAPI specification not found' });
+    }
+  });
+
+  app.get('/docs', (_req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Transaction Ledger Service API Documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .topbar { display: none; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = function() {
+      SwaggerUIBundle({
+        url: '/api-docs.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis],
+        layout: "BaseLayout"
+      });
+    };
+  </script>
+</body>
+</html>`);
   });
 
   // Dependency Resolution
