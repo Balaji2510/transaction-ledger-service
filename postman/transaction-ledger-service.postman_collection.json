@@ -1,0 +1,745 @@
+{
+  "info": {
+    "_postman_id": "7b8e515d-8b6b-4e8c-8f4b-3d077cbb8812",
+    "name": "Transaction Ledger Service API",
+    "description": "Comprehensive Postman collection for Transaction Ledger Service covering all endpoints, success flows, edge cases, validations, data integrity checks, transaction history, and atomic money transfer.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "apiPrefix",
+      "value": "/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "accountId",
+      "value": "acc_user_101",
+      "type": "string"
+    },
+    {
+      "key": "recipientAccountId",
+      "value": "acc_user_102",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Checks the operational status of the service and its uptime."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Account Management",
+      "item": [
+        {
+          "name": "2.1 Create Account (Auto-Generated UUID)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Springs\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"]
+            },
+            "description": "Creates an account with a system-generated UUID and initial balance of 0."
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Create Account (Custom ID)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{accountId}}\",\n  \"name\": \"Bob Vance\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"]
+            },
+            "description": "Creates an account with client-supplied custom unique ID."
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 Create Second Account (for Transfer Target)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{recipientAccountId}}\",\n  \"name\": \"Charlie Brown\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"]
+            },
+            "description": "Creates secondary target account for money transfer tests."
+          },
+          "response": []
+        },
+        {
+          "name": "2.4 Validation - Missing Name (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"]
+            },
+            "description": "Expects 400 Bad Request because account name is required."
+          },
+          "response": []
+        },
+        {
+          "name": "2.5 Validation - Prohibited Initial Balance (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Malicious User\",\n  \"balance\": 1000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"]
+            },
+            "description": "Expects 400 Bad Request because clients cannot set initial balance."
+          },
+          "response": []
+        },
+        {
+          "name": "2.6 Conflict - Duplicate Account ID (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{accountId}}\",\n  \"name\": \"Duplicate Bob\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"]
+            },
+            "description": "Expects 409 Conflict when account ID already exists."
+          },
+          "response": []
+        },
+        {
+          "name": "2.7 Get Account by ID (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}"]
+            },
+            "description": "Fetches full account entity by ID."
+          },
+          "response": []
+        },
+        {
+          "name": "2.8 Get Account by ID - Not Found (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/non_existent_account_999",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "non_existent_account_999"]
+            },
+            "description": "Expects 404 Not Found for non-existent account ID."
+          },
+          "response": []
+        },
+        {
+          "name": "2.9 List Accounts - Page 1 (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts?page=1&pageSize=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "2" }
+              ]
+            },
+            "description": "Lists accounts with pagination, sorted newest first."
+          },
+          "response": []
+        },
+        {
+          "name": "2.10 List Accounts - Page 2 (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts?page=2&pageSize=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts"],
+              "query": [
+                { "key": "page", "value": "2" },
+                { "key": "pageSize", "value": "2" }
+              ]
+            },
+            "description": "Fetches second page of accounts."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Account Balance",
+      "item": [
+        {
+          "name": "3.1 Get Current Balance (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "balance"]
+            },
+            "description": "Retrieves the accurate, current balance of an account via lean DB query."
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Get Balance - Not Found (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/non_existent_account_999/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "non_existent_account_999", "balance"]
+            },
+            "description": "Expects 404 Not Found for non-existent account balance lookup."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Transactions & Data Integrity",
+      "item": [
+        {
+          "name": "4.1 Credit Transaction (+100) (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"credit\",\n  \"amount\": 100,\n  \"referenceId\": \"ref_credit_001\",\n  \"description\": \"Initial account funding\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Atomically credits account with 100 and updates account balance."
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Credit Transaction (+50) (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"credit\",\n  \"amount\": 50,\n  \"referenceId\": \"ref_credit_002\",\n  \"description\": \"Secondary deposit\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Atomically credits another 50 (balance becomes 150)."
+          },
+          "response": []
+        },
+        {
+          "name": "4.3 Debit Transaction (-30) (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"debit\",\n  \"amount\": 30,\n  \"referenceId\": \"ref_debit_001\",\n  \"description\": \"Utility bill\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Atomically debits 30 (balance becomes 120)."
+          },
+          "response": []
+        },
+        {
+          "name": "4.4 Verify Resulting Balance (Should be 120) (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "balance"]
+            },
+            "description": "Verifies balance consistency (100 + 50 - 30 = 120)."
+          },
+          "response": []
+        },
+        {
+          "name": "4.5 Overdraft Prevention - Insufficient Balance (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"debit\",\n  \"amount\": 500,\n  \"referenceId\": \"ref_overdraft_fail\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Expects 400 Bad Request (INSUFFICIENT_BALANCE) without altering account balance."
+          },
+          "response": []
+        },
+        {
+          "name": "4.6 Idempotency - Duplicate Reference ID (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"credit\",\n  \"amount\": 50,\n  \"referenceId\": \"ref_credit_001\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Expects 409 Conflict when referenceId has already been used for this account."
+          },
+          "response": []
+        },
+        {
+          "name": "4.7 Validation - Invalid Transaction Type (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"crypto\",\n  \"amount\": 50,\n  \"referenceId\": \"ref_invalid_type\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Expects 400 Bad Request because transaction type must be credit or debit."
+          },
+          "response": []
+        },
+        {
+          "name": "4.8 Validation - Negative/Zero Amount (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"credit\",\n  \"amount\": -10,\n  \"referenceId\": \"ref_negative\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Expects 400 Bad Request because amount must be > 0."
+          },
+          "response": []
+        },
+        {
+          "name": "4.9 Validation - Missing Reference ID (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"credit\",\n  \"amount\": 50\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Expects 400 Bad Request because referenceId is required for audit and idempotency."
+          },
+          "response": []
+        },
+        {
+          "name": "4.10 Immutability - Attempt PUT (405)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 9999\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Expects 405 Method Not Allowed because transactions are immutable."
+          },
+          "response": []
+        },
+        {
+          "name": "4.11 Immutability - Attempt DELETE (405)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Expects 405 Method Not Allowed because transaction deletion is prohibited."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Transaction History & Filtering",
+      "item": [
+        {
+          "name": "5.1 Get All Transactions (Latest First) (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"]
+            },
+            "description": "Fetches all transactions for account, sorted newest first based on created_at."
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Filter by Type: credit (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions?type=credit",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"],
+              "query": [
+                { "key": "type", "value": "credit" }
+              ]
+            },
+            "description": "Returns only credit transactions."
+          },
+          "response": []
+        },
+        {
+          "name": "5.3 Filter by Type: debit (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions?type=debit",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"],
+              "query": [
+                { "key": "type", "value": "debit" }
+              ]
+            },
+            "description": "Returns only debit transactions."
+          },
+          "response": []
+        },
+        {
+          "name": "5.4 Paginate History - Page 1 (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions?page=1&pageSize=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "2" }
+              ]
+            },
+            "description": "Returns page 1 with 2 records and complete pagination metadata."
+          },
+          "response": []
+        },
+        {
+          "name": "5.5 Paginate History - Page 2 (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/transactions?page=2&pageSize=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "transactions"],
+              "query": [
+                { "key": "page", "value": "2" },
+                { "key": "pageSize", "value": "2" }
+              ]
+            },
+            "description": "Returns page 2 of transaction history."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Money Transfer (Bonus Feature)",
+      "item": [
+        {
+          "name": "6.1 Successful Atomic Transfer (200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccountId\": \"{{accountId}}\",\n  \"toAccountId\": \"{{recipientAccountId}}\",\n  \"amount\": 40,\n  \"referenceId\": \"transfer_ref_001\",\n  \"description\": \"Consulting fee payment\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "transfer"]
+            },
+            "description": "Atomically transfers 40 from account 101 (120 -> 80) to account 102 (0 -> 40)."
+          },
+          "response": []
+        },
+        {
+          "name": "6.2 Verify Source Account Balance (Should be 80) (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{accountId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{accountId}}", "balance"]
+            },
+            "description": "Verifies source account balance after transfer (80)."
+          },
+          "response": []
+        },
+        {
+          "name": "6.3 Verify Destination Account Balance (Should be 40) (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/{{recipientAccountId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "{{recipientAccountId}}", "balance"]
+            },
+            "description": "Verifies destination account balance after transfer (40)."
+          },
+          "response": []
+        },
+        {
+          "name": "6.4 Transfer - Insufficient Balance with Rollback (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccountId\": \"{{accountId}}\",\n  \"toAccountId\": \"{{recipientAccountId}}\",\n  \"amount\": 500,\n  \"referenceId\": \"transfer_fail_insufficient\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "transfer"]
+            },
+            "description": "Expects 400 Bad Request; neither account balance is altered."
+          },
+          "response": []
+        },
+        {
+          "name": "6.5 Transfer - Self Transfer Rejection (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccountId\": \"{{accountId}}\",\n  \"toAccountId\": \"{{accountId}}\",\n  \"amount\": 20,\n  \"referenceId\": \"transfer_self_reject\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "transfer"]
+            },
+            "description": "Expects 400 Bad Request because fromAccountId and toAccountId cannot be the same."
+          },
+          "response": []
+        },
+        {
+          "name": "6.6 Transfer - Destination Not Found (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromAccountId\": \"{{accountId}}\",\n  \"toAccountId\": \"ghost_account_404\",\n  \"amount\": 20,\n  \"referenceId\": \"transfer_dest_404\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/accounts/transfer",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiPrefix}}", "accounts", "transfer"]
+            },
+            "description": "Expects 404 Not Found when destination account does not exist."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

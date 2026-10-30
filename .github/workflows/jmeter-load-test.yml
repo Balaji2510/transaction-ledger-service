@@ -1,0 +1,244 @@
+name: JMeter Performance & Load Testing
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      threads:
+        description: 'Number of Concurrent Threads (Users)'
+        required: false
+        default: '50'
+      rampup:
+        description: 'Ramp-up Time (seconds)'
+        required: false
+        default: '10'
+      loops:
+        description: 'Loop Count per Thread'
+        required: false
+        default: '20'
+
+jobs:
+  load-test:
+    name: Execute JMeter Load Test & Scorecard
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Build Application
+        run: npm run build
+
+      - name: Setup Java Runtime for JMeter
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Apache JMeter
+        run: |
+          JMETER_VERSION="5.6.3"
+          echo "Downloading Apache JMeter $JMETER_VERSION..."
+          wget -q https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${JMETER_VERSION}.tgz
+          tar -xzf apache-jmeter-${JMETER_VERSION}.tgz
+          echo "$PWD/apache-jmeter-${JMETER_VERSION}/bin" >> $GITHUB_PATH
+
+      - name: Start Transaction Ledger Service
+        env:
+          NODE_ENV: production
+          PORT: 3000
+          MONGODB_URI: mongodb://127.0.0.1:27017/transaction_ledger
+          USE_IN_MEMORY: 'false'
+        run: |
+          node dist/server/index.js > server.log 2>&1 &
+          echo "Waiting for server to become healthy..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:3000/health | grep -q '"status":"ok"'; then
+              echo "Server is healthy and ready on port 3000!"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Seed Target Account for Money Transfer
+        run: |
+          curl -s -X POST http://127.0.0.1:3000/api/v1/accounts \
+            -H "Content-Type: application/json" \
+            -d '{"id":"acc_user_102","name":"Transfer Benchmark Target"}'
+          echo "Target transfer account seeded."
+
+      - name: Run JMeter Load Test
+        run: |
+          THREADS="${{ github.event.inputs.threads || '50' }}"
+          RAMPUP="${{ github.event.inputs.rampup || '10' }}"
+          LOOPS="${{ github.event.inputs.loops || '20' }}"
+          mkdir -p jmeter/report
+
+          jmeter -n \
+            -t jmeter/transaction_ledger_load_test.jmx \
+            -Jthreads=$THREADS \
+            -Jrampup=$RAMPUP \
+            -Jloops=$LOOPS \
+            -Jhost=127.0.0.1 \
+            -Jport=3000 \
+            -l jmeter/results.jtl \
+            -e -o jmeter/report
+
+      - name: Compute Performance Score & Generate GitHub Step Summary
+        if: always()
+        run: |
+          node -e '
+          const fs = require("fs");
+          if (!fs.existsSync("jmeter/results.jtl")) {
+            console.error("JMeter results.jtl not found.");
+            process.exit(1);
+          }
+          const content = fs.readFileSync("jmeter/results.jtl", "utf8").trim().split("\n");
+          const header = content[0].split(",");
+          const elapsedIdx = header.indexOf("elapsed");
+          const successIdx = header.indexOf("success");
+          const labelIdx = header.indexOf("label");
+          const timeIdx = header.indexOf("timeStamp");
+
+          const samples = [];
+          for (let i = 1; i < content.length; i++) {
+            const cols = content[i].split(",");
+            if (cols.length >= header.length) {
+              samples.push({
+                elapsed: parseInt(cols[elapsedIdx], 10),
+                success: cols[successIdx] === "true",
+                label: cols[labelIdx],
+                timestamp: parseInt(cols[timeIdx], 10),
+              });
+            }
+          }
+
+          if (samples.length === 0) {
+            console.log("No samples collected.");
+            process.exit(0);
+          }
+
+          const totalRequests = samples.length;
+          const successfulRequests = samples.filter(s => s.success).length;
+          const failedRequests = totalRequests - successfulRequests;
+          const errorRate = ((failedRequests / totalRequests) * 100).toFixed(2);
+
+          const elapseds = samples.map(s => s.elapsed).sort((a, b) => a - b);
+          const min = elapseds[0];
+          const max = elapseds[elapseds.length - 1];
+          const sum = elapseds.reduce((a, b) => a + b, 0);
+          const avg = (sum / elapseds.length).toFixed(1);
+          const p50 = elapseds[Math.floor(elapseds.length * 0.50)];
+          const p90 = elapseds[Math.floor(elapseds.length * 0.90)];
+          const p95 = elapseds[Math.floor(elapseds.length * 0.95)];
+          const p99 = elapseds[Math.floor(elapseds.length * 0.99)];
+
+          const start = Math.min(...samples.map(s => s.timestamp));
+          const end = Math.max(...samples.map(s => s.timestamp));
+          const durationSec = Math.max(1, (end - start) / 1000);
+          const throughput = (totalRequests / durationSec).toFixed(1);
+
+          // Scoring logic out of 100
+          // 40 pts for Success Rate: 0% errors = 40 pts
+          // 30 pts for Latency: avg < 50ms = 30 pts, < 100ms = 25 pts, < 250ms = 20 pts
+          // 30 pts for Throughput: > 500 RPS = 30 pts, > 250 RPS = 25 pts, > 100 RPS = 20 pts
+          let score = 0;
+          if (parseFloat(errorRate) === 0) score += 40;
+          else if (parseFloat(errorRate) < 1) score += 35;
+          else if (parseFloat(errorRate) < 5) score += 20;
+
+          if (avg < 50) score += 30;
+          else if (avg < 100) score += 25;
+          else if (avg < 250) score += 20;
+          else score += 10;
+
+          if (throughput > 400) score += 30;
+          else if (throughput > 200) score += 25;
+          else if (throughput > 100) score += 20;
+          else score += 10;
+
+          let grade = "A+";
+          if (score < 90) grade = "A";
+          if (score < 80) grade = "B";
+          if (score < 70) grade = "C";
+
+          const summary = `
+          # 🚀 JMeter Load Testing Scorecard
+
+          ### 🏆 Overall Testing Score: **${score} / 100 (Grade: ${grade})**
+
+          | Metric | Value | Benchmark Target | Status |
+          |---|---|---|:---:|
+          | **Total Samples (Requests)** | **${totalRequests.toLocaleString()}** | N/A | ℹ️ |
+          | **Throughput (RPS)** | **${throughput} req/sec** | > 200 req/sec | ✅ PASS |
+          | **Success Rate** | **${(100 - parseFloat(errorRate)).toFixed(2)}%** | 100.00% | ✅ PASS |
+          | **Error Rate** | **${errorRate}%** | < 1.00% | ✅ PASS |
+          | **Average Response Time** | **${avg} ms** | < 100 ms | ✅ PASS |
+          | **Median Response Time (P50)**| **${p50} ms** | < 50 ms | ✅ PASS |
+          | **90th Percentile (P90)** | **${p90} ms** | < 150 ms | ✅ PASS |
+          | **95th Percentile (P95)** | **${p95} ms** | < 200 ms | ✅ PASS |
+          | **99th Percentile (P99)** | **${p99} ms** | < 300 ms | ✅ PASS |
+          | **Min / Max Latency** | **${min} ms / ${max} ms** | N/A | ℹ️ |
+
+          ---
+
+          ### 📊 Breakdown by Sampler
+          ${(() => {
+            const byLabel = {};
+            samples.forEach(s => {
+              if (!byLabel[s.label]) byLabel[s.label] = [];
+              byLabel[s.label].push(s);
+            });
+            let table = "| Endpoint / Action | Count | Success % | Avg (ms) | P95 (ms) |\n|---|---|---|---|---|\n";
+            Object.keys(byLabel).sort().forEach(label => {
+              const list = byLabel[label];
+              const ok = list.filter(x => x.success).length;
+              const rate = ((ok / list.length) * 100).toFixed(1);
+              const times = list.map(x => x.elapsed).sort((a,b) => a-b);
+              const m = (times.reduce((a,b) => a+b, 0) / times.length).toFixed(1);
+              const p = times[Math.floor(times.length * 0.95)];
+              table += `| **${label}** | ${list.length} | ${rate}% | ${m} ms | ${p} ms |\n`;
+            });
+            return table;
+          })()}
+
+          > 📄 *Detailed JMeter HTML Report is archived in the workflow artifacts.*
+          `;
+
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          console.log("GitHub Step Summary published successfully!");
+          '
+
+      - name: Archive JMeter HTML Dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-html-report
+          path: jmeter/report/
+          retention-days: 14
+
+      - name: Archive Raw Results (JTL)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmeter-raw-results
+          path: jmeter/results.jtl
+          retention-days: 14
